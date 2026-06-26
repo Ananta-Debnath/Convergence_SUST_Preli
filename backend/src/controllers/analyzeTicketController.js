@@ -5,6 +5,7 @@ const { resolveRoutingAndSeverity } = require('../services/severity_department.j
 const { generateMasterNextAction } = require('../services/nextAction.js');
 const { decideHumanReview } = require('../services/humanReview.js');
 const { generateCustomerReply } = require('../services/generateReply.js');
+const { enforceSafety } = require('../services/safety.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -61,7 +62,8 @@ const analyzeTicket = async (req, res) => {
 
     const confidenceScore = parseFloat(((confidence + classifyConfidence) / 2).toFixed(2));
 
-    return res.status(200).json({
+    // Build raw response, then run safety enforcement
+    const rawResponse = {
       ticket_id: body.ticket_id || null,
       relevant_transaction_id: relevant_transaction_id,
       evidence_verdict: verdict,
@@ -74,7 +76,12 @@ const analyzeTicket = async (req, res) => {
       human_review_required: humanReviewRequired,
       confidence: confidenceScore,
       reason_codes: reason_codes
-    });
+    };
+
+    // Safety layer: scan & auto-fix policy violations
+    const { sanitized } = enforceSafety(rawResponse, body.complaint || '');
+
+    return res.status(200).json(sanitized);
   } catch (err) {
     return res.status(500).json({
       status: 'error',
