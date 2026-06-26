@@ -6,7 +6,7 @@ const { generateMasterNextAction } = require('../services/nextAction.js');
 const { decideHumanReview } = require('../services/humanReview.js');
 const { generateCustomerReply } = require('../services/generateReply.js');
 const { enforceSafety } = require('../services/safety.js');
-const { generateAgentSummary } = require('../services/agentsummary.js');
+const { generateAgentSummary } = require('../services/agentSummary.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
