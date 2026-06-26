@@ -14,6 +14,39 @@ Service.
 - **Container:** Multi-stage `Dockerfile` (Alpine), non-root `node` user
 - **Deploy target:** Render (Blueprint via `render.yaml`, runtime: `docker`)
 
+## AI Approach
+
+The solution employs a **Deterministic Expert System (Heuristic AI)** rather than a Generative AI or LLM approach. The multi-stage pipeline consists of:
+1. **Classification Engine**: Uses priority-based keyword matching (English and Bangla) combined with structural history verification (e.g., verifying a "charged twice" complaint by finding duplicate transaction rows).
+2. **Consistency Engine**: Extracts entities (amount, counterparty) using regular expressions, normalizes them, and compares the user's intent with the ledger reality.
+3. **Decision Engine**: Resolves severity, department routing, next actions, and human review requirements using a cascading state mutation architecture.
+
+## Safety Logic
+
+Safety is enforced via a post-processing guard (`enforceSafety`) that scans and auto-corrects all output fields:
+- **Rule 1 (Sensitive Data)**: Automatically strips out any text asking for the user's PIN, OTP, or password.
+- **Rule 2 (Unauthorized Confirmation)**: Replaces absolute promises of refunds or reversals with hedged, policy-compliant language.
+- **Rule 3 (Suspicious Third Party)**: Modifies instructions that direct customers to unofficial phone numbers, URLs, or social media, directing them to official channels instead.
+- **Rule 4 (Prompt Injection Defense)**: Checks the input complaint against known prompt injection signatures and scrubs any leaked injection artifacts from the outputs.
+
+## MODELS
+
+- **No Generative AI / LLM models are used in this final solution.**
+- **Why it was chosen**: A completely deterministic rules engine guarantees 100% predictable output with zero risk of hallucination. It offers strict adherence to organizational policy, complete explainability, and total protection against LLM-specific vulnerabilities (like prompt injection).
+- **Cost Reasoning**: Using a deterministic system results in **$0 variable cost**. It requires no external API keys, avoids token usage fees, and executes in milliseconds, reducing compute overhead significantly compared to LLM-based solutions.
+
+## Assumptions
+
+- Input payloads will conform to the expected JSON schema (e.g., `transaction_history` is a well-formed array).
+- Counterparty identifiers (e.g., phone numbers) can be safely normalized by stripping non-digit characters.
+- Bangla text inputs use standard Unicode characters, which can be reliably mapped or parsed.
+
+## Known Limitations
+
+- **Linguistic Flexibility**: Hardcoded regex and keyword patterns may miss highly colloquial, misspelled, or entirely novel ways a user might describe an issue.
+- **Complex Edge Cases**: Highly nuanced disputes (e.g., involving multiple partial payments or complex multi-party interactions) might lack structural matches and be conservatively flagged as `'other'` or `'insufficient_data'`.
+- **Maintenance Scalability**: Adding new transaction types or routing rules requires manual updates to the keyword banks and structural verification logic.
+
 ## Project structure
 
 ```
