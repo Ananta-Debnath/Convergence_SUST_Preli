@@ -1,3 +1,6 @@
+const { classifyTicketWithConfidence } = require('../services/classify.js');
+const { analyzeConsistency } = require('../services/consistency.js');
+const { analyzeAgentSummary } = require('../services/agentsummary.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -29,9 +32,24 @@ const ALLOWED_ENUMS = {
 
 const analyzeTicket = async (req, res) => {
   try {
+    const body = req.body || {};
+    const { case_type, classifyConfidence, reason_codes } = classifyTicketWithConfidence(body);
+    const { verdict, confidence, relevant_transaction_id } = analyzeConsistency(body.complaint, body.transaction_history || []);
+    // const agent_summary = analyzeAgentSummary(body);
+
     return res.status(200).json({
-      status: 'success',
-      message: 'Ticket analyzed successfully',
+      ticket_id: body.ticket_id || null,
+      relevant_transaction_id: relevant_transaction_id,
+      evidence_verdict: verdict,
+      case_type: case_type,
+      severity: null,
+      department: null,
+      agent_summary: null,
+      recommended_next_action: null,
+      customer_reply: null,
+      human_review_required: null,
+      confidence: null,
+      reason_codes: reason_codes
     });
   } catch (err) {
     return res.status(500).json({
@@ -41,4 +59,4 @@ const analyzeTicket = async (req, res) => {
   }
 };
 
-module.exports = { analyzeTicket };
+module.exports = { analyzeTicket, ALLOWED_ENUMS };
