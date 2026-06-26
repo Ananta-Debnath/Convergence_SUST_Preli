@@ -2,7 +2,9 @@ const { classifyTicketWithConfidence } = require('../services/classify.js');
 const { analyzeConsistency } = require('../services/consistency.js');
 const { analyzeAgentSummary } = require('../services/agentsummary.js');
 const { resolveRoutingAndSeverity } = require('../services/severity_department.js');
+const { generateMasterNextAction } = require('../services/nextAction.js');
 const { decideHumanReview } = require('../services/humanReview.js');
+const { generateCustomerReply } = require('../services/generateReply.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -35,11 +37,29 @@ const ALLOWED_ENUMS = {
 const analyzeTicket = async (req, res) => {
   try {
     const body = req.body || {};
+    let finalResponse = {};
     const { case_type, classifyConfidence, reason_codes } = classifyTicketWithConfidence(body);
     const { verdict, confidence, relevant_transaction_id } = analyzeConsistency(body.complaint, body.transaction_history || []);
     const { severity, department } = resolveRoutingAndSeverity(case_type, verdict);
     const humanReviewRequired = decideHumanReview({ case_type, evidence_verdict: verdict });
+    const customerReply = generateCustomerReply({
+      case_type,
+      evidence_verdict: verdict,
+      relevant_transaction_id,
+      language: body.language || 'en',
+      user_type: body.user_type || 'customer'
+    });
     // const agent_summary = analyzeAgentSummary(body);
+
+    const assignedAction = generateMasterNextAction({
+      case_type,
+      evidence_verdict: verdict,
+      severity,
+      department,
+      human_review_required: humanReviewRequired
+    });
+
+    const confidenceScore = parseFloat(((confidence + classifyConfidence) / 2).toFixed(2));
 
     return res.status(200).json({
       ticket_id: body.ticket_id || null,
@@ -49,10 +69,10 @@ const analyzeTicket = async (req, res) => {
       severity: severity,
       department: department,
       agent_summary: null,
-      recommended_next_action: null,
-      customer_reply: null,
+      recommended_next_action: assignedAction,
+      customer_reply: customerReply,
       human_review_required: humanReviewRequired,
-      confidence: null,
+      confidence: confidenceScore,
       reason_codes: reason_codes
     });
   } catch (err) {
