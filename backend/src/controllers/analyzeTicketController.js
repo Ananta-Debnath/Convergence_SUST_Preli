@@ -2,6 +2,7 @@ const { classifyTicketWithConfidence } = require('../services/classify.js');
 const { analyzeConsistency } = require('../services/consistency.js');
 const { analyzeAgentSummary } = require('../services/agentsummary.js');
 const { resolveRoutingAndSeverity } = require('../services/severity_department.js');
+const { decideHumanReview } = require('../services/humanReview.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -37,6 +38,7 @@ const analyzeTicket = async (req, res) => {
     const { case_type, classifyConfidence, reason_codes } = classifyTicketWithConfidence(body);
     const { verdict, confidence, relevant_transaction_id } = analyzeConsistency(body.complaint, body.transaction_history || []);
     const { severity, department } = resolveRoutingAndSeverity(case_type, verdict);
+    const humanReviewRequired = decideHumanReview({ case_type, evidence_verdict: verdict });
     // const agent_summary = analyzeAgentSummary(body);
 
     return res.status(200).json({
@@ -49,7 +51,7 @@ const analyzeTicket = async (req, res) => {
       agent_summary: null,
       recommended_next_action: null,
       customer_reply: null,
-      human_review_required: null,
+      human_review_required: humanReviewRequired,
       confidence: null,
       reason_codes: reason_codes
     });
