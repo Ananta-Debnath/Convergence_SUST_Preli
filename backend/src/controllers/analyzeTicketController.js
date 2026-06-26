@@ -1,4 +1,4 @@
-const { classifyTicket } = require('../services/classify.js');
+const { classifyTicketWithConfidence } = require('../services/classify.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -31,21 +31,21 @@ const ALLOWED_ENUMS = {
 const analyzeTicket = async (req, res) => {
   try {
     const body = req.body || {};
-    const case_type = classifyTicket(body);
+    const { case_type, classifyConfidence, reason_codes } = classifyTicketWithConfidence(body);
 
     return res.status(200).json({
       ticket_id: body.ticket_id || null,
-      relevant_transaction_id: "TXN-9202",
-      evidence_verdict: "inconsistent",
+      relevant_transaction_id: null,
+      evidence_verdict: null,
       case_type: case_type,
-      severity: "medium",
-      department: "dispute_resolution",
-      agent_summary: "Customer claims TXN-9202 (2000 BDT to +8801812345678) was a wrong transfer, but transaction history shows three prior transfers to the same counterparty in the past nine days, suggesting an established recipient.",
-      recommended_next_action: "Flag for human review. Verify with the customer whether this was genuinely a wrong transfer given the established transaction pattern with this recipient.",
-      customer_reply: "We have received your request regarding transaction TXN-9202. Please do not share your PIN or OTP with anyone. Our dispute team will review the case carefully and contact you through official support channels.",
-      human_review_required: true,
-      confidence: 0.75,
-      reason_codes: ["wrong_transfer_claim", "established_recipient_pattern", "evidence_inconsistent"]
+      severity: null,
+      department: null,
+      agent_summary: null,
+      recommended_next_action: null,
+      customer_reply: null,
+      human_review_required: null,
+      confidence: null,
+      reason_codes: reason_codes
     });
   } catch (err) {
     return res.status(500).json({

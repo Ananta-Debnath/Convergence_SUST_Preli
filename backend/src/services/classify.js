@@ -383,6 +383,158 @@ const runDetectors = (input) => {
 };
 
 // ---------------------------------------------------------------------------
+// Confidence scoring
+//
+// Each detector produces a score in [0, 1] reflecting how strongly its case
+// type is supported by the input. The aggregator then combines per-detector
+// scores with a priority ordering so the winning detector dominates.
+//
+// Rationale for the bands below:
+//   - History-confirmed structural matches (duplicate_payment pair, failed
+//     payment identified by amount/counterparty, etc.) are near-certain.
+//   - History-confirmed matches on weaker signal (single keyword, no
+//     identifying detail) are moderate.
+//   - Text-only keyword matches without any history confirmation (phishing,
+//     refund_request) are lower — the customer could be paraphrasing.
+//
+// The final output is clamped to [0.30, 0.95]. The floor of 0.30 prevents
+// downstream code from treating an "other" classification as effectively zero
+// confidence (which would be misread as "ignore"), and the ceiling of 0.95
+// reserves the last 5% for human review since these are heuristic, not
+// model-derived, probabilities.
+// ---------------------------------------------------------------------------
+
+const CONFIDENCE = {
+  // Floors and ceilings
+  MIN: 0.30,
+  MAX: 0.95,
+  // Per-detector base scores
+  TEXT_ONLY_BASE: 0.55,        // keyword hit, no history confirmation
+  STRUCTURAL_BASE: 0.75,       // history confirms the case type
+  STRUCTURAL_STRONG: 0.85,     // history confirms with precise identifiers
+  IDENTIFIER_BONUS: 0.05,      // amount or counterparty also identified
+  MULTIPLE_HISTORY_BONUS: 0.05,// e.g. several prior transfers / multiple failures
+  TEXT_KEYWORDS_BONUS: 0.03,   // text also contains matching keywords
+};
+
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+/**
+ * Score a single detector given the evidence it would use. Returns 0 if the
+ * detector would have returned false (no signal at all).
+ */
+const scorePhishing = (input) => {
+  if (!isPhishing(input)) return 0;
+  // Phishing is text-only by design — we don't confirm phishing from history.
+  let s = CONFIDENCE.TEXT_ONLY_BASE;
+  // Multiple distinct phishing keywords strengthen the signal.
+  const text = normalize(input && input.complaint);
+  const hits = KEYWORDS.phishing.filter((k) => text.includes(k.toLowerCase())).length;
+  if (hits >= 2) s += 0.05;
+  if (hits >= 4) s += 0.05;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scoreMerchantSettlementDelay = (input) => {
+  if (!isMerchantSettlementDelay(input)) return 0;
+  let s = CONFIDENCE.STRUCTURAL_BASE;
+  const history = getHistory(input);
+  const settlementCount = findCompletedOfType(history, 'settlement').length
+    + findPendingOrFailedOfType(history, 'settlement').length;
+  if (settlementCount >= 1) s += CONFIDENCE.STRUCTURAL_STRONG - CONFIDENCE.STRUCTURAL_BASE;
+  if (isMerchant(input)) s += CONFIDENCE.IDENTIFIER_BONUS;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scoreAgentCashInIssue = (input) => {
+  if (!isAgentCashInIssue(input)) return 0;
+  let s = CONFIDENCE.STRUCTURAL_BASE;
+  const history = getHistory(input);
+  const pendingFailed = findPendingOrFailedOfType(history, 'cash_in').length;
+  const recent = findCompletedOfType(history, 'cash_in').filter((t) =>
+    withinWindowFromLatest(history, t.timestamp, 24 * 60 * 60 * 1000),
+  ).length;
+  // A pending/failed cash_in is much stronger evidence than a disputed recent
+  // completed one.
+  if (pendingFailed > 0) s = CONFIDENCE.STRUCTURAL_STRONG;
+  if (recent > 1) s += CONFIDENCE.MULTIPLE_HISTORY_BONUS;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scoreDuplicatePayment = (input) => {
+  if (!isDuplicatePayment(input)) return 0;
+  // findDuplicatePair is itself the structural proof.
+  const pair = findDuplicatePair(getHistory(input));
+  if (!pair) return CONFIDENCE.TEXT_ONLY_BASE;
+  let s = CONFIDENCE.STRUCTURAL_STRONG;
+  // If the customer also mentioned it in text, we have a structural AND
+  // textual confirmation — very high confidence.
+  const text = normalize(input && input.complaint);
+  if (hasAny(text, KEYWORDS.duplicate_payment)) s += CONFIDENCE.TEXT_KEYWORDS_BONUS;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scorePaymentFailed = (input) => {
+  if (!isPaymentFailed(input)) return 0;
+  let s = CONFIDENCE.STRUCTURAL_BASE;
+  const history = getHistory(input);
+  const failedPayments = findFailedOfType(history, 'payment');
+  const text = normalize(input && input.complaint);
+  const { amount, counterparty } = extractAmountAndCounterpartyFromComplaint(text);
+  if (amount != null || counterparty) s += CONFIDENCE.IDENTIFIER_BONUS;
+  if (failedPayments.length > 1) s += CONFIDENCE.MULTIPLE_HISTORY_BONUS;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scoreWrongTransfer = (input) => {
+  if (!isWrongTransfer(input)) return 0;
+  let s = CONFIDENCE.STRUCTURAL_BASE;
+  const history = getHistory(input);
+  const completedTransfers = findCompletedOfType(history, 'transfer');
+  const text = normalize(input && input.complaint);
+  const { amount, counterparty } = extractAmountAndCounterpartyFromComplaint(text);
+  if (amount != null || counterparty) s += CONFIDENCE.IDENTIFIER_BONUS;
+  if (completedTransfers.length >= 3) s += CONFIDENCE.MULTIPLE_HISTORY_BONUS;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scoreRefundRequest = (input) => {
+  if (!isRefundRequest(input)) return 0;
+  // Refund is text-only — there's no history pattern that confirms a refund
+  // request vs. a complaint about a non-refundable charge.
+  let s = CONFIDENCE.TEXT_ONLY_BASE;
+  const text = normalize(input && input.complaint);
+  const hits = KEYWORDS.refund.filter((k) => text.includes(k.toLowerCase())).length;
+  if (hits >= 2) s += 0.05;
+  return clamp(s, CONFIDENCE.MIN, CONFIDENCE.MAX);
+};
+
+const scoreOther = () => CONFIDENCE.MIN;
+
+/**
+ * Detector order must mirror `runDetectors` — the first detector whose score
+ * is > 0 wins, and its score becomes the headline confidence.
+ */
+const SCORED_DETECTORS = [
+  ['phishing_or_social_engineering', scorePhishing],
+  ['merchant_settlement_delay', scoreMerchantSettlementDelay],
+  ['agent_cash_in_issue', scoreAgentCashInIssue],
+  ['duplicate_payment', scoreDuplicatePayment],
+  ['payment_failed', scorePaymentFailed],
+  ['wrong_transfer', scoreWrongTransfer],
+  ['refund_request', scoreRefundRequest],
+];
+
+const computeConfidence = (input) => {
+  if (!input || typeof input !== 'object') return scoreOther();
+  for (const [, score] of SCORED_DETECTORS) {
+    const s = score(input);
+    if (s > 0) return s;
+  }
+  return scoreOther();
+};
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -489,9 +641,27 @@ const classifyTicket = (input) => {
   return case_type_enum.includes(result) ? result : 'other';
 };
 
+/**
+ * Classify a ticket and return a confidence score in [0.30, 0.95] alongside
+ * the case type and the reason codes that justify the decision. The
+ * confidence is derived from per-detector evidence (history confirmations,
+ * identifier matches, multiple keyword hits) — see CONFIDENCE in this file
+ * for the exact bands.
+ *
+ * @param {object} input - Same shape as `classifyTicket`.
+ * @returns {{case_type: string, confidence: number, reason_codes: string[]}}
+ *   Never throws — malformed input yields `{ case_type: 'other',
+ *   confidence: 0.30, reason_codes: ['no_structural_match'] }`.
+ */
+const classifyTicketWithConfidence = (input) => {
+  const case_type = classifyTicket(input);
+  const confidence = computeConfidence(input);
+  const reason_codes = reasonCodesFor(case_type, input || {});
+  return { case_type, confidence, reason_codes };
+};
+
 module.exports = {
-  case_type_enum,
-  classifyTicket,
+  classifyTicketWithConfidence,
   // Exported for tests; the controller only needs classifyTicket.
   _internal: {
     isPhishing,
@@ -507,5 +677,7 @@ module.exports = {
     findPendingOrFailedOfType,
     extractAmountAndCounterpartyFromComplaint,
     reasonCodesFor,
+    computeConfidence,
+    CONFIDENCE,
   },
 };
