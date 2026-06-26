@@ -655,9 +655,9 @@ const classifyTicket = (input) => {
  */
 const classifyTicketWithConfidence = (input) => {
   const case_type = classifyTicket(input);
-  const confidence = computeConfidence(input);
+  const classifyConfidence = computeConfidence(input);
   const reason_codes = reasonCodesFor(case_type, input || {});
-  return { case_type, confidence, reason_codes };
+  return { case_type, classifyConfidence, reason_codes };
 };
 
 module.exports = {
