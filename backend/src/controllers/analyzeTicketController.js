@@ -6,6 +6,7 @@ const { generateMasterNextAction } = require('../services/nextAction.js');
 const { decideHumanReview } = require('../services/humanReview.js');
 const { generateCustomerReply } = require('../services/generateReply.js');
 const { enforceSafety } = require('../services/safety.js');
+const { generateAgentSummary } = require('../services/agentsummary.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -60,6 +61,15 @@ const analyzeTicket = async (req, res) => {
       human_review_required: humanReviewRequired
     });
 
+    const agentSummary = await generateAgentSummary(
+      {
+        case_type,
+        evidence_verdict: verdict,
+        relevant_transaction_id
+      },
+      body
+    );
+
     const confidenceScore = parseFloat(((confidence + classifyConfidence) / 2).toFixed(2));
 
     // Build raw response, then run safety enforcement
@@ -70,7 +80,7 @@ const analyzeTicket = async (req, res) => {
       case_type: case_type,
       severity: severity,
       department: department,
-      agent_summary: null,
+      agent_summary: agentSummary,
       recommended_next_action: assignedAction,
       customer_reply: customerReply,
       human_review_required: humanReviewRequired,
