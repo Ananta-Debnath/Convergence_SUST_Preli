@@ -145,3 +145,4 @@ vite.config.ts.timestamp-*
 
 # Other files and directories
 .puku
+.vscode
