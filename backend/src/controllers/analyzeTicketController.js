@@ -52,7 +52,7 @@ const analyzeTicket = async (req, res) => {
     finalResponse.agent_summary = null;
     finalResponse.recommended_next_action = null;
     finalResponse.customer_reply = null;
-    finalResponse.human_review_required = true;
+    finalResponse.human_review_required = humanReviewRequired;
     finalResponse.confidence = confidence;
     finalResponse.reason_codes = reason_codes;
 
