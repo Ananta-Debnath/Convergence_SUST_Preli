@@ -1,6 +1,6 @@
 const { classifyTicketWithConfidence } = require('../services/classify.js');
 const { analyzeConsistency } = require('../services/consistency.js');
-const { analyzeAgentSummary } = require('../services/agentsummary.js');
+const { analyzeAgentSummary } = require('../services/finalCheck.js');
 const { resolveRoutingAndSeverity } = require('../services/severity_department.js');
 const { generateMasterNextAction } = require('../services/nextAction.js');
 const { decideHumanReview } = require('../services/humanReview.js');

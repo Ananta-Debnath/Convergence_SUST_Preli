@@ -5,10 +5,11 @@
  */
 
 const { callGemini } = require('../services/geminiService');
+const path = require('path');
 
 // Load environment variables
 try {
-  require('dotenv').config();
+  require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 } catch (_) {
   // Ignore if dotenv is not loaded
 }
