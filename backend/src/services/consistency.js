@@ -7,7 +7,7 @@
  *
  * @param {string} complaint            - Raw complaint text from the user
  * @param {Array}  transaction_history  - Array of transaction objects from the payload
- * @returns {{ verdict: string, confidence: number }} verdict + confidence (0.0–1.0)
+ * @returns {{ verdict: string, confidence: number, relevant_transaction_id: string|null }}
  */
 function analyzeConsistency(complaint, transaction_history = []) {
 
@@ -120,7 +120,7 @@ function analyzeConsistency(complaint, transaction_history = []) {
     const conf = isFraudIntent
       ? Math.min(extractionQuality + 0.15, 0.55)
       : Math.max(extractionQuality * 0.6, 0.20);
-    return { verdict: 'insufficient_data', confidence: parseFloat(conf.toFixed(2)) };
+    return { verdict: 'insufficient_data', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: null };
   }
 
   // ── BRANCH C: Multiple candidates ───────────────────────────
@@ -143,13 +143,13 @@ function analyzeConsistency(complaint, transaction_history = []) {
         // Tighter timestamp gap → higher confidence
         const timeBonus = diffSecs <= 60 ? 0.10 : 0.0;
         const conf = Math.min(extractionQuality + 0.15 + timeBonus, 0.98);
-        return { verdict: 'consistent', confidence: parseFloat(conf.toFixed(2)) };
+        return { verdict: 'consistent', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: duplicateTx.transaction_id };
       }
     }
 
     // Different counterparties or wide time spread — ambiguous
     const conf = Math.max(extractionQuality * 0.65, 0.30);
-    return { verdict: 'insufficient_data', confidence: parseFloat(conf.toFixed(2)) };
+    return { verdict: 'insufficient_data', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: null };
   }
 
   // ── BRANCH B: Exactly one candidate ─────────────────────────
@@ -169,7 +169,7 @@ function analyzeConsistency(complaint, transaction_history = []) {
       // More prior transfers → stronger contradiction signal
       const patternStrength = Math.min(priorTransfers.length * 0.08, 0.20);
       const conf = Math.min(extractionQuality + patternStrength, 0.95);
-      return { verdict: 'inconsistent', confidence: parseFloat(conf.toFixed(2)) };
+      return { verdict: 'inconsistent', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: match.transaction_id };
     }
   }
 
@@ -179,19 +179,19 @@ function analyzeConsistency(complaint, transaction_history = []) {
 
   if (transferKeywords.test(text) && match.type === 'cash_in') {
     const conf = Math.min(extractionQuality + 0.10, 0.90);
-    return { verdict: 'inconsistent', confidence: parseFloat(conf.toFixed(2)) };
+    return { verdict: 'inconsistent', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: match.transaction_id };
   }
 
   if (paymentKeywords.test(text) && match.type === 'transfer') {
     const conf = Math.min(extractionQuality + 0.10, 0.90);
-    return { verdict: 'inconsistent', confidence: parseFloat(conf.toFixed(2)) };
+    return { verdict: 'inconsistent', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: match.transaction_id };
   }
 
   // Perfect match — story aligns with ledger
   // Both amount + counterparty matched → top confidence; amount only → slightly less
   const matchBonus = targetCounterparty !== null ? 0.15 : 0.05;
   const conf = Math.min(extractionQuality + matchBonus, 0.98);
-  return { verdict: 'consistent', confidence: parseFloat(conf.toFixed(2)) };
+  return { verdict: 'consistent', confidence: parseFloat(conf.toFixed(2)), relevant_transaction_id: match.transaction_id };
 }
 
 module.exports = { analyzeConsistency };
