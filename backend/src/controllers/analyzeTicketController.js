@@ -67,7 +67,7 @@ const analyzeTicket = async (req, res) => {
       severity: severity,
       department: department,
       agent_summary: null,
-      recommended_next_action: null,
+      recommended_next_action: assignedAction,
       customer_reply: null,
       human_review_required: humanReviewRequired,
       confidence: null,
