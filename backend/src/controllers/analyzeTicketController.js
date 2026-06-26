@@ -4,6 +4,7 @@ const { analyzeAgentSummary } = require('../services/agentsummary.js');
 const { resolveRoutingAndSeverity } = require('../services/severity_department.js');
 const { generateMasterNextAction } = require('../services/nextAction.js');
 const { decideHumanReview } = require('../services/humanReview.js');
+const { generateCustomerReply } = require('../services/generateReply.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -41,23 +42,24 @@ const analyzeTicket = async (req, res) => {
     const { verdict, confidence, relevant_transaction_id } = analyzeConsistency(body.complaint, body.transaction_history || []);
     const { severity, department } = resolveRoutingAndSeverity(case_type, verdict);
     const humanReviewRequired = decideHumanReview({ case_type, evidence_verdict: verdict });
+    const customerReply = generateCustomerReply({
+      case_type,
+      evidence_verdict: verdict,
+      relevant_transaction_id,
+      language: body.language || 'en',
+      user_type: body.user_type || 'customer'
+    });
     // const agent_summary = analyzeAgentSummary(body);
 
-    finalResponse.ticket_id = body.ticket_id || null;
-    finalResponse.relevant_transaction_id = relevant_transaction_id;
-    finalResponse.evidence_verdict = verdict;
-    finalResponse.case_type = case_type;
-    finalResponse.severity = severity;
-    finalResponse.department = department;
-    finalResponse.agent_summary = null;
-    finalResponse.recommended_next_action = null;
-    finalResponse.customer_reply = null;
-    finalResponse.human_review_required = humanReviewRequired;
-    finalResponse.confidence = confidence;
-    finalResponse.reason_codes = reason_codes;
+    const assignedAction = generateMasterNextAction({
+      case_type,
+      evidence_verdict: verdict,
+      severity,
+      department,
+      human_review_required: humanReviewRequired
+    });
 
-    const assignedAction = generateMasterNextAction(finalResponse);
-    finalResponse.recommended_next_action = assignedAction;
+    const confidenceScore = parseFloat(((confidence + classifyConfidence) / 2).toFixed(2));
 
     return res.status(200).json({
       ticket_id: body.ticket_id || null,
@@ -68,9 +70,9 @@ const analyzeTicket = async (req, res) => {
       department: department,
       agent_summary: null,
       recommended_next_action: assignedAction,
-      customer_reply: null,
+      customer_reply: customerReply,
       human_review_required: humanReviewRequired,
-      confidence: null,
+      confidence: confidenceScore,
       reason_codes: reason_codes
     });
   } catch (err) {
