@@ -2,6 +2,7 @@ const { classifyTicketWithConfidence } = require('../services/classify.js');
 const { analyzeConsistency } = require('../services/consistency.js');
 const { analyzeAgentSummary } = require('../services/agentsummary.js');
 const { resolveRoutingAndSeverity } = require('../services/severity_department.js');
+const { generateMasterNextAction } = require('../services/nextAction.js');
 
 const ALLOWED_ENUMS = {
   language: ['en', 'bn', 'mixed'],
@@ -34,10 +35,27 @@ const ALLOWED_ENUMS = {
 const analyzeTicket = async (req, res) => {
   try {
     const body = req.body || {};
+    let finalResponse = {};
     const { case_type, classifyConfidence, reason_codes } = classifyTicketWithConfidence(body);
     const { verdict, confidence, relevant_transaction_id } = analyzeConsistency(body.complaint, body.transaction_history || []);
     const { severity, department } = resolveRoutingAndSeverity(case_type, verdict);
     // const agent_summary = analyzeAgentSummary(body);
+
+    finalResponse.ticket_id = body.ticket_id || null;
+    finalResponse.relevant_transaction_id = relevant_transaction_id;
+    finalResponse.evidence_verdict = verdict;
+    finalResponse.case_type = case_type;
+    finalResponse.severity = severity;
+    finalResponse.department = department;
+    finalResponse.agent_summary = null;
+    finalResponse.recommended_next_action = null;
+    finalResponse.customer_reply = null;
+    finalResponse.human_review_required = true;
+    finalResponse.confidence = confidence;
+    finalResponse.reason_codes = reason_codes;
+
+    const assignedAction = generateMasterNextAction(finalResponse);
+    finalResponse.recommended_next_action = assignedAction;
 
     return res.status(200).json({
       ticket_id: body.ticket_id || null,
