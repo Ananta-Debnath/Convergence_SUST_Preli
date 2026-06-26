@@ -146,3 +146,15 @@ vite.config.ts.timestamp-*
 # Other files and directories
 .puku
 .vscode
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+
+# ---- Docker scratch files (keep Dockerfile and .dockerignore themselves) ----
+Dockerfile.bak
+Dockerfile.*.bak
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# ---- Puku / local AI tooling ----
+.puku
